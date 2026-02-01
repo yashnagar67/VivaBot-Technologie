@@ -34,9 +34,6 @@ export function useVoiceAssistant() {
      */
     const fetchApiKey = async () => {
         try {
-            // HARDCODED API KEY - REMOVE BEFORE PRODUCTION
-            return 'AIzaSyDLqRiancdncSjdFx1YLK7cBYRYRXLPYiw';
-
             // Check if API key is provided locally (for development)
             const localApiKey = import.meta.env.VITE_GEMINI_API_KEY;
             if (localApiKey && localApiKey !== 'your_gemini_api_key_here') {
