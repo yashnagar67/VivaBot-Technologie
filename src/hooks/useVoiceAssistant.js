@@ -34,6 +34,14 @@ export function useVoiceAssistant() {
      */
     const fetchApiKey = async () => {
         try {
+            // Check if API key is provided locally (for development)
+            const localApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (localApiKey && localApiKey !== 'your_gemini_api_key_here') {
+                console.log('✅ Using local API key from .env.local');
+                return localApiKey;
+            }
+
+            // Otherwise fetch from backend
             // The backend endpoint is /api/vivaai/voice/generate-token
             const response = await fetch(`${config.backendUrl}/api/vivaai/voice/generate-token`, {
                 method: 'POST',
