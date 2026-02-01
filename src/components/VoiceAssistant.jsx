@@ -8,6 +8,7 @@ import { useVoiceAssistant } from '../hooks/useVoiceAssistant';
 const VoiceAssistant = () => {
     const { status, error, isConnected, start, stop } = useVoiceAssistant();
     const [isExpanded, setIsExpanded] = useState(false);
+    const [showPermissionModal, setShowPermissionModal] = useState(false);
 
     // Auto-expand when active
     useEffect(() => {
@@ -21,8 +22,18 @@ const VoiceAssistant = () => {
             stop();
             setIsExpanded(false);
         } else {
-            start();
+            // Show permission explanation modal first
+            setShowPermissionModal(true);
         }
+    };
+
+    const handlePermissionAccept = () => {
+        setShowPermissionModal(false);
+        start();
+    };
+
+    const handlePermissionCancel = () => {
+        setShowPermissionModal(false);
     };
 
     const getStatusColor = () => {
@@ -47,6 +58,40 @@ const VoiceAssistant = () => {
 
     return (
         <div className="fixed bottom-8 right-8 z-50">
+            {/* Permission Explanation Modal */}
+            {showPermissionModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] animate-fade-in">
+                    <div className="bg-gradient-to-br from-gray-900 to-gray-800 border-2 border-purple-500/50 rounded-2xl p-8 max-w-md mx-4 shadow-2xl animate-slide-up">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="bg-purple-600 rounded-full p-3">
+                                <Mic className="w-6 h-6 text-white" />
+                            </div>
+                            <h3 className="text-2xl font-bold text-white">Microphone Access</h3>
+                        </div>
+
+                        <p className="text-gray-300 mb-6 leading-relaxed">
+                            VivaBot needs access to your microphone to have a voice conversation with you.
+                            Your voice data is processed securely and is never stored.
+                        </p>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={handlePermissionCancel}
+                                className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl font-semibold transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handlePermissionAccept}
+                                className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-semibold transition-all shadow-lg"
+                            >
+                                Allow Access
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Voice Orb Container */}
             <div className={`transition-all duration-500 ${isExpanded ? 'scale-100' : 'scale-90'}`}>
                 {/* Error Message */}
@@ -171,6 +216,14 @@ const VoiceAssistant = () => {
                     from { opacity: 0; transform: translateY(10px); }
                     to { opacity: 1; transform: translateY(0); }
                 }
+                @keyframes slide-up {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                @keyframes fade-in {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
                 .animate-sound-wave-1 {
                     animation: sound-wave-1 1.5s ease-in-out infinite;
                 }
@@ -185,6 +238,9 @@ const VoiceAssistant = () => {
                 }
                 .animate-slide-up {
                     animation: slide-up 0.3s ease-out;
+                }
+                .animate-fade-in {
+                    animation: fade-in 0.2s ease-out;
                 }
             `}</style>
         </div>
