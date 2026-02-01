@@ -30,20 +30,13 @@ export function useVoiceAssistant() {
     const nextPlayTimeRef = useRef(0);
 
     /**
-     * Fetch API key from backend
+     * Fetch ephemeral token from backend
      */
     const fetchApiKey = async () => {
         try {
-            // Check if API key is provided locally (for development)
-            const localApiKey = import.meta.env.VITE_GEMINI_API_KEY;
-            if (localApiKey && localApiKey !== 'your_gemini_api_key_here') {
-                console.log('✅ Using local API key from .env.local');
-                return localApiKey;
-            }
-
-            // Otherwise fetch from backend
-            // The backend endpoint is /api/vivaai/voice/generate-token
-            const response = await fetch(`${config.backendUrl}/api/vivaai/voice/generate-token`, {
+            // Fetch ephemeral token from backend
+            console.log('🔑 Fetching ephemeral token from backend...');
+            const response = await fetch('https://vivabot-agent-token-backend.onrender.com/api/voice/generate-token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -51,19 +44,20 @@ export function useVoiceAssistant() {
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error('Backend response:', errorText);
-                throw new Error(`Failed to fetch API key: ${response.status}`);
+                throw new Error(`Failed to fetch token: ${response.status}`);
             }
 
             const data = await response.json();
-            console.log('API key fetched successfully');
+            console.log('✅ Ephemeral token received');
 
-            if (!data.apiKey) {
-                throw new Error('No API key in response');
+            if (!data.token) {
+                throw new Error('No token in response');
             }
 
-            return data.apiKey;
+            // Return the ephemeral token (format: "auth_tokens/...")
+            return data.token;
         } catch (err) {
-            console.error('API key fetch error:', err);
+            console.error('❌ Token fetch error:', err);
             throw new Error('Could not connect to backend');
         }
     };
@@ -183,14 +177,19 @@ export function useVoiceAssistant() {
             setStatus('connecting');
             setError(null);
 
-            // Get API key from backend
-            console.log('📡 Fetching API key from backend...');
+            // Get ephemeral token from backend
+            console.log('📡 Fetching ephemeral token from backend...');
             const apiKey = await fetchApiKey();
-            console.log('✅ API key received');
+            console.log('✅ Ephemeral token received');
 
-            // Initialize Gemini client
-            console.log('🤖 Initializing Gemini client...');
-            const genAI = new GoogleGenAI({ apiKey });
+            // Initialize Gemini client with ephemeral token
+            console.log('🤖 Initializing Gemini client with ephemeral token...');
+            const genAI = new GoogleGenAI({
+                apiKey,
+                httpOptions: {
+                    apiVersion: 'v1alpha'
+                }
+            });
 
             // Check if live API is available
             console.log('🔍 Checking Live API availability...');
@@ -286,10 +285,18 @@ REMEMBER: NEVER use pure English. ALWAYS use Hinglish. Focus on the VISION and T
                         console.log('Close code:', e.code);
                         console.log('Close reason:', e.reason);
                         console.log('Was clean:', e.wasClean);
-                        console.error('❌ WebSocket closed unexpectedly!', e);
+
+                        // Code 1000 is normal closure, not an error
+                        if (e.code !== 1000 && !e.wasClean) {
+                            console.error('❌ WebSocket closed unexpectedly!', e);
+                            setError(`Connection closed: ${e.reason || 'Unknown reason'} (Code: ${e.code})`);
+                            setStatus('error');
+                        } else {
+                            console.log('✅ Connection closed normally');
+                            setStatus('idle');
+                        }
+
                         setIsConnected(false);
-                        setStatus('idle');
-                        setError(`Connection closed: ${e.reason || 'Unknown reason'} (Code: ${e.code})`);
                     }
                 }
             });
