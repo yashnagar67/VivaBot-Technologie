@@ -22,13 +22,23 @@ const VoiceAssistant = () => {
             stop();
             setIsExpanded(false);
         } else {
-            // Show permission explanation modal first
-            setShowPermissionModal(true);
+            // Check if user has already granted permission before
+            const hasSeenPermissionModal = localStorage.getItem('vivabot_mic_permission_shown');
+
+            if (hasSeenPermissionModal) {
+                // User has seen modal before, directly start
+                start();
+            } else {
+                // First-time user, show permission explanation modal
+                setShowPermissionModal(true);
+            }
         }
     };
 
     const handlePermissionAccept = () => {
         setShowPermissionModal(false);
+        // Mark that user has seen the permission modal
+        localStorage.setItem('vivabot_mic_permission_shown', 'true');
         start();
     };
 
