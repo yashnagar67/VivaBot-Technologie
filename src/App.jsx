@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
 import ReactGA from "react-ga4";
+import VoiceAssistant from './components/VoiceAssistant';
 
 function App() {
   // App component ke andar
-ReactGA.initialize("G-6WQ0EQ20DJ"); 
+  ReactGA.initialize("G-6WQ0EQ20DJ");
 
-// Ye track karega ki page khula
-ReactGA.send({ hitType: "pageview", page: window.location.pathname });
+  // Ye track karega ki page khula
+  ReactGA.send({ hitType: "pageview", page: window.location.pathname });
   useEffect(() => {
     // Load Google Fonts
     const link = document.createElement('link');
@@ -84,6 +85,9 @@ ReactGA.send({ hitType: "pageview", page: window.location.pathname });
           </div>
         </div>
       </div>
+
+      {/* Voice Assistant - Floating Button */}
+      <VoiceAssistant />
     </div>
   );
 }
