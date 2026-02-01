@@ -26,7 +26,7 @@ export function useVoiceAssistant() {
     const audioQueueRef = useRef([]);
     const isPlayingRef = useRef(false);
     const playbackLoopRunningRef = useRef(false);
-    const currentSourceRef = useRef(null);
+    const activeSourcesRef = useRef([]);
     const nextPlayTimeRef = useRef(0);
 
     /**
@@ -116,6 +116,17 @@ export function useVoiceAssistant() {
                 const currentTime = playbackContextRef.current.currentTime;
                 const startTime = Math.max(currentTime, nextPlayTimeRef.current);
 
+                // Track this source so we can stop it on interruption
+                activeSourcesRef.current.push(source);
+
+                // Remove from tracking when it ends
+                source.onended = () => {
+                    const index = activeSourcesRef.current.indexOf(source);
+                    if (index > -1) {
+                        activeSourcesRef.current.splice(index, 1);
+                    }
+                };
+
                 source.start(startTime);
                 nextPlayTimeRef.current = startTime + audioBuffer.duration;
 
@@ -141,10 +152,24 @@ export function useVoiceAssistant() {
 
         // Handle interruption
         if (message.serverContent?.interrupted) {
-            console.log('⚠️ Interrupted - clearing audio queue');
+            console.log('⚠️ Interrupted - stopping all audio immediately');
+
+            // Stop all currently playing audio sources
+            activeSourcesRef.current.forEach(source => {
+                try {
+                    source.stop();
+                } catch (e) {
+                    // Source might already be stopped
+                }
+            });
+            activeSourcesRef.current = [];
+
+            // Clear audio queue and reset playback state
             audioQueueRef.current = [];
             isPlayingRef.current = false;
             nextPlayTimeRef.current = 0;
+            playbackLoopRunningRef.current = false;
+
             setStatus('listening');
             return;
         }
@@ -245,7 +270,10 @@ CONVERSATION RULES:
 
 2. BE THE EXPERT: Speak with confidence. You are demonstrating the product *by being* the product.
 3. KEEP IT SHORT: Spoken words should be punchy. No long paragraphs. Max 2-3 sentences per turn.
-4. LANGUAGE - CRITICAL: You MUST ALWAYS speak in Hinglish (natural mix of Hindi and English). This is MANDATORY. Never speak in pure English. Use Hindi words naturally mixed with English for a conversational feel.
+4. LANGUAGE RULE: 
+   - DEFAULT: Always speak in Hinglish (natural mix of Hindi and English) by default.
+   - FLEXIBILITY: If the user explicitly asks you to speak in ANY specific language (e.g., "Please speak in English", "Hindi mein bolo", "Speak in Spanish"), then switch to that language for the rest of the conversation.
+   - ADAPT: Match the user's language preference completely. Support English, Hindi, Spanish, French, German, or any other language the user requests.
 5. FOCUS ON VISION: Talk about the broader vision of voice agents across domains, not just offering to take interviews.
 
 KNOWLEDGE BASE:
