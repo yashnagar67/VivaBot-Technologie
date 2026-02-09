@@ -78,18 +78,19 @@ export function useVoiceAssistant(persona = 'vivabot') {
     const [status, setStatus] = useState('idle'); // idle, connecting, listening, speaking, error
     const [error, setError] = useState(null);
     const [isConnected, setIsConnected] = useState(false);
-
+    const [timeRemaining, setTimeRemaining] = useState(persona === 'jamie' ? 300 : null); // 5 min = 300 seconds for Jamie
 
     const sessionRef = useRef(null);
     const mediaStreamRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const audioContextRef = useRef(null); // For recording at 16kHz
     const playbackContextRef = useRef(null); // For playback at 24kHz
-    const audioQueueRef = useRef([]);
+    const audioQueueRef = useRef([])
     const isPlayingRef = useRef(false);
     const playbackLoopRunningRef = useRef(false);
     const activeSourcesRef = useRef([]);
     const nextPlayTimeRef = useRef(0);
+    const timerRef = useRef(null); // Timer for Jamie's 5-min limit
 
     /**
      * Fetch ephemeral token from backend
@@ -323,6 +324,28 @@ export function useVoiceAssistant(persona = 'vivabot') {
                         console.log('✅ Connected to Gemini Live API');
                         setIsConnected(true);
                         setStatus('listening');
+
+                        // Start 5-minute timer for Jamie
+                        if (persona === 'jamie') {
+                            setTimeRemaining(300); // Reset to 5 min
+                            timerRef.current = setInterval(() => {
+                                setTimeRemaining(prev => {
+                                    if (prev <= 1) {
+                                        // Time's up! Auto-disconnect
+                                        console.log('⏰ Jamie session time limit reached');
+                                        clearInterval(timerRef.current);
+                                        // Trigger stop - we'll call it after this
+                                        setTimeout(() => {
+                                            if (sessionRef.current) {
+                                                sessionRef.current.close();
+                                            }
+                                        }, 100);
+                                        return 0;
+                                    }
+                                    return prev - 1;
+                                });
+                            }, 1000);
+                        }
                     },
                     onmessage: handleMessage,
                     onerror: (e) => {
@@ -337,6 +360,12 @@ export function useVoiceAssistant(persona = 'vivabot') {
                         console.log('Close reason:', e.reason);
                         console.log('Was clean:', e.wasClean);
 
+                        // Clear timer for Jamie
+                        if (timerRef.current) {
+                            clearInterval(timerRef.current);
+                            timerRef.current = null;
+                        }
+
                         // Code 1000 is normal closure, not an error
                         if (e.code !== 1000 && !e.wasClean) {
                             console.error('❌ WebSocket closed unexpectedly!', e);
@@ -348,6 +377,10 @@ export function useVoiceAssistant(persona = 'vivabot') {
                         }
 
                         setIsConnected(false);
+                        // Reset timer for Jamie
+                        if (persona === 'jamie') {
+                            setTimeRemaining(300);
+                        }
                     }
                 }
             });
@@ -500,6 +533,7 @@ export function useVoiceAssistant(persona = 'vivabot') {
         status,
         error,
         isConnected,
+        timeRemaining,
         start,
         stop
     };

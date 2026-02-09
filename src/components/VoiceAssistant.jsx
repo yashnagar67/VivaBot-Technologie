@@ -9,10 +9,17 @@ import { useVoiceAssistant } from '../hooks/useVoiceAssistant';
  * @param {string} name - Display name for the bot
  */
 const VoiceAssistant = ({ persona = 'vivabot', position = 'right', name = 'VivaBot' }) => {
-    const { status, error, isConnected, start, stop } = useVoiceAssistant(persona);
+    const { status, error, isConnected, timeRemaining, start, stop } = useVoiceAssistant(persona);
     const [isExpanded, setIsExpanded] = useState(false);
     const [showPermissionModal, setShowPermissionModal] = useState(false);
 
+    // Format time remaining as MM:SS
+    const formatTime = (seconds) => {
+        if (seconds === null) return null;
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
 
     // Auto-expand when active
     useEffect(() => {
@@ -110,7 +117,7 @@ const VoiceAssistant = ({ persona = 'vivabot', position = 'right', name = 'VivaB
             <div className={`transition-all duration-500 ${isExpanded ? 'scale-100' : 'scale-90'}`}>
                 {/* Error Message */}
                 {error && isExpanded && (
-                    <div className="absolute bottom-full mb-4 right-0 bg-red-600 text-white px-4 py-3 rounded-xl shadow-2xl max-w-xs animate-slide-up border-2 border-red-400">
+                    <div className={`absolute bottom-full mb-4 ${position === 'left' ? 'left-0' : 'right-0'} bg-red-600 text-white px-4 py-3 rounded-xl shadow-2xl max-w-xs animate-slide-up border-2 border-red-400`}>
                         <div className="flex items-start gap-2">
                             <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                             <p className="text-sm font-medium">{error}</p>
@@ -120,8 +127,14 @@ const VoiceAssistant = ({ persona = 'vivabot', position = 'right', name = 'VivaB
 
                 {/* Status Text */}
                 {isExpanded && status !== 'idle' && (
-                    <div className="absolute bottom-full mb-4 right-0 bg-gray-900 text-white px-5 py-3 rounded-xl shadow-2xl animate-slide-up border-2 border-gray-700">
+                    <div className={`absolute bottom-full mb-4 ${position === 'left' ? 'left-0' : 'right-0'} bg-gray-900 text-white px-5 py-3 rounded-xl shadow-2xl animate-slide-up border-2 border-gray-700`}>
                         <p className="text-sm font-bold tracking-wide">{getStatusText()}</p>
+                        {/* Timer for Jamie */}
+                        {persona === 'jamie' && timeRemaining !== null && isConnected && (
+                            <p className={`text-xs mt-1 font-mono ${timeRemaining <= 60 ? 'text-red-400' : 'text-blue-400'}`}>
+                                ⏱️ {formatTime(timeRemaining)}
+                            </p>
+                        )}
                     </div>
                 )}
 
