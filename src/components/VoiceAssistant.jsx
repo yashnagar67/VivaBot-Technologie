@@ -4,11 +4,15 @@ import { useVoiceAssistant } from '../hooks/useVoiceAssistant';
 
 /**
  * Voice Assistant Component - Futuristic Voice Orb
+ * @param {string} persona - 'vivabot' or 'jamie'
+ * @param {string} position - 'left' or 'right'
+ * @param {string} name - Display name for the bot
  */
-const VoiceAssistant = () => {
-    const { status, error, isConnected, start, stop } = useVoiceAssistant();
+const VoiceAssistant = ({ persona = 'vivabot', position = 'right', name = 'VivaBot' }) => {
+    const { status, error, isConnected, start, stop } = useVoiceAssistant(persona);
     const [isExpanded, setIsExpanded] = useState(false);
     const [showPermissionModal, setShowPermissionModal] = useState(false);
+
 
     // Auto-expand when active
     useEffect(() => {
@@ -23,7 +27,7 @@ const VoiceAssistant = () => {
             setIsExpanded(false);
         } else {
             // Check if user has already granted permission before
-            const hasSeenPermissionModal = localStorage.getItem('vivabot_mic_permission_shown');
+            const hasSeenPermissionModal = localStorage.getItem(`${persona}_mic_permission_shown`);
 
             if (hasSeenPermissionModal) {
                 // User has seen modal before, directly start
@@ -38,7 +42,7 @@ const VoiceAssistant = () => {
     const handlePermissionAccept = () => {
         setShowPermissionModal(false);
         // Mark that user has seen the permission modal
-        localStorage.setItem('vivabot_mic_permission_shown', 'true');
+        localStorage.setItem(`${persona}_mic_permission_shown`, 'true');
         start();
     };
 
@@ -67,7 +71,7 @@ const VoiceAssistant = () => {
     };
 
     return (
-        <div className="fixed bottom-8 right-8 z-50">
+        <div className={`fixed bottom-8 ${position === 'left' ? 'left-8' : 'right-8'} z-50`}>
             {/* Permission Explanation Modal */}
             {showPermissionModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] animate-fade-in">
@@ -198,10 +202,17 @@ const VoiceAssistant = () => {
 
                 {/* Label (when collapsed) */}
                 {!isExpanded && status === 'idle' && (
-                    <div className="absolute -top-14 right-0 bg-gray-900 text-white px-4 py-2 rounded-xl text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-2xl border-2 border-gray-700">
-                        Talk to VivaBot 🎤
+                    <div className={`absolute -top-14 ${position === 'left' ? 'left-0' : 'right-0'} bg-gray-900 text-white px-4 py-2 rounded-xl text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-2xl border-2 border-gray-700`}>
+                        Talk to {name} 🎤
                     </div>
                 )}
+
+                {/* Bot Name Label */}
+                <div className="text-center mt-2">
+                    <span className={`text-xs font-bold px-3 py-1 rounded-full ${persona === 'jamie' ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white'}`}>
+                        {name}
+                    </span>
+                </div>
             </div>
 
             {/* Custom Animations */}

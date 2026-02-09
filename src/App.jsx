@@ -86,8 +86,12 @@ function App() {
         </div>
       </div>
 
-      {/* Voice Assistant - Floating Button */}
-      <VoiceAssistant />
+      {/* Voice Assistants - Dual Bots */}
+      {/* Jamie (Friendly Bot) - LEFT side */}
+      <VoiceAssistant persona="jamie" position="left" name="Jamie" />
+
+      {/* VivaBot (Intro Bot) - RIGHT side */}
+      <VoiceAssistant persona="vivabot" position="right" name="VivaBot" />
     </div>
   );
 }
