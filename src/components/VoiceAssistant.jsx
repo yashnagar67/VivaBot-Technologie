@@ -129,12 +129,6 @@ const VoiceAssistant = ({ persona = 'vivabot', position = 'right', name = 'VivaB
                 {isExpanded && status !== 'idle' && (
                     <div className={`absolute bottom-full mb-4 ${position === 'left' ? 'left-0' : 'right-0'} bg-gray-900 text-white px-5 py-3 rounded-xl shadow-2xl animate-slide-up border-2 border-gray-700`}>
                         <p className="text-sm font-bold tracking-wide">{getStatusText()}</p>
-                        {/* Timer for Jamie */}
-                        {persona === 'jamie' && timeRemaining !== null && isConnected && (
-                            <p className={`text-xs mt-1 font-mono ${timeRemaining <= 60 ? 'text-red-400' : 'text-blue-400'}`}>
-                                ⏱️ {formatTime(timeRemaining)}
-                            </p>
-                        )}
                     </div>
                 )}
 
