@@ -78,19 +78,18 @@ export function useVoiceAssistant(persona = 'vivabot') {
     const [status, setStatus] = useState('idle'); // idle, connecting, listening, speaking, error
     const [error, setError] = useState(null);
     const [isConnected, setIsConnected] = useState(false);
-    const [timeRemaining, setTimeRemaining] = useState(persona === 'jamie' ? 300 : null); // 5 min = 300 seconds for Jamie
+
 
     const sessionRef = useRef(null);
     const mediaStreamRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const audioContextRef = useRef(null); // For recording at 16kHz
     const playbackContextRef = useRef(null); // For playback at 24kHz
-    const audioQueueRef = useRef([])
+    const audioQueueRef = useRef([]);
     const isPlayingRef = useRef(false);
     const playbackLoopRunningRef = useRef(false);
     const activeSourcesRef = useRef([]);
     const nextPlayTimeRef = useRef(0);
-    const timerRef = useRef(null); // Timer for Jamie's 5-min limit
 
     /**
      * Fetch ephemeral token from backend
@@ -239,6 +238,23 @@ export function useVoiceAssistant(persona = 'vivabot') {
 
         // Handle audio response
         if (message.serverContent?.modelTurn?.parts) {
+            // Check if this is a new turn (first chunk of new response)
+            // Clear old audio if we're starting a fresh response
+            if (message.serverContent.turnComplete === false && audioQueueRef.current.length === 0) {
+                console.log('🆕 New model turn starting - ensuring clean state');
+                // Stop any lingering audio
+                activeSourcesRef.current.forEach(source => {
+                    try {
+                        source.stop();
+                    } catch (e) {
+                        // Already stopped
+                    }
+                });
+                activeSourcesRef.current = [];
+                isPlayingRef.current = false;
+                nextPlayTimeRef.current = 0;
+            }
+
             for (const part of message.serverContent.modelTurn.parts) {
                 if (part.inlineData?.data) {
                     console.log('🎵 Received audio chunk:', part.inlineData.data.length, 'bytes (base64)');
@@ -253,6 +269,11 @@ export function useVoiceAssistant(persona = 'vivabot') {
                 console.log('▶️ Starting playback, queue size:', audioQueueRef.current.length);
                 playbackLoop();
             }
+        }
+
+        // Handle turn complete - clear queue after this turn finishes
+        if (message.serverContent?.turnComplete) {
+            console.log('✅ Turn complete - ready for next interaction');
         }
     }, [playbackLoop]);
 
@@ -324,28 +345,6 @@ export function useVoiceAssistant(persona = 'vivabot') {
                         console.log('✅ Connected to Gemini Live API');
                         setIsConnected(true);
                         setStatus('listening');
-
-                        // Start 5-minute timer for Jamie
-                        if (persona === 'jamie') {
-                            setTimeRemaining(300); // Reset to 5 min
-                            timerRef.current = setInterval(() => {
-                                setTimeRemaining(prev => {
-                                    if (prev <= 1) {
-                                        // Time's up! Auto-disconnect
-                                        console.log('⏰ Jamie session time limit reached');
-                                        clearInterval(timerRef.current);
-                                        // Trigger stop - we'll call it after this
-                                        setTimeout(() => {
-                                            if (sessionRef.current) {
-                                                sessionRef.current.close();
-                                            }
-                                        }, 100);
-                                        return 0;
-                                    }
-                                    return prev - 1;
-                                });
-                            }, 1000);
-                        }
                     },
                     onmessage: handleMessage,
                     onerror: (e) => {
@@ -360,12 +359,6 @@ export function useVoiceAssistant(persona = 'vivabot') {
                         console.log('Close reason:', e.reason);
                         console.log('Was clean:', e.wasClean);
 
-                        // Clear timer for Jamie
-                        if (timerRef.current) {
-                            clearInterval(timerRef.current);
-                            timerRef.current = null;
-                        }
-
                         // Code 1000 is normal closure, not an error
                         if (e.code !== 1000 && !e.wasClean) {
                             console.error('❌ WebSocket closed unexpectedly!', e);
@@ -377,10 +370,6 @@ export function useVoiceAssistant(persona = 'vivabot') {
                         }
 
                         setIsConnected(false);
-                        // Reset timer for Jamie
-                        if (persona === 'jamie') {
-                            setTimeRemaining(300);
-                        }
                     }
                 }
             });
@@ -404,6 +393,7 @@ export function useVoiceAssistant(persona = 'vivabot') {
 
             // Flag to pause processing during playback
             let isProcessingPaused = false;
+            let lastSpeechTime = 0;
 
             processor.onaudioprocess = (e) => {
                 if (!sessionRef.current || isProcessingPaused) return;
@@ -411,6 +401,36 @@ export function useVoiceAssistant(persona = 'vivabot') {
                 try {
                     // Get PCM audio data from input buffer
                     const inputData = e.inputBuffer.getChannelData(0);
+
+
+                    // OPTIMIZED: Voice activity detection - only runs when bot is speaking (zero latency impact on responses)
+                    if (isPlayingRef.current) {
+                        // Quick volume check (RMS) - only when needed
+                        let sum = 0;
+                        for (let i = 0; i < inputData.length; i++) {
+                            sum += inputData[i] * inputData[i];
+                        }
+                        const volume = Math.sqrt(sum / inputData.length);
+
+                        // Higher threshold to avoid false triggers
+                        if (volume > 0.05 && Date.now() - lastSpeechTime > 300) {
+                            console.log('🎤 User speaking - interrupting bot');
+
+                            // Immediate interruption
+                            activeSourcesRef.current.forEach(source => {
+                                try { source.stop(); } catch (e) { }
+                            });
+                            activeSourcesRef.current = [];
+                            audioQueueRef.current = [];
+                            isPlayingRef.current = false;
+                            nextPlayTimeRef.current = 0;
+                            playbackLoopRunningRef.current = false;
+                            setStatus('listening');
+
+                            lastSpeechTime = Date.now();
+                        }
+                    }
+
 
                     // Convert Float32Array to Int16Array (PCM 16-bit)
                     const pcmData = new Int16Array(inputData.length);
@@ -533,7 +553,6 @@ export function useVoiceAssistant(persona = 'vivabot') {
         status,
         error,
         isConnected,
-        timeRemaining,
         start,
         stop
     };
