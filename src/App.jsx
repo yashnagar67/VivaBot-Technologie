@@ -1,52 +1,15 @@
 import { useEffect } from 'react';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import ReactGA from 'react-ga4';
 import SplineScene from './components/SplineScene';
 import VoiceAssistant from './components/VoiceAssistant';
+import LinguaLive from './components/LinguaLive';
 
 const SPLINE_ROBOT_URL = 'https://prod.spline.design/9AxqfcHKT-BLG1bC/scene.splinecode';
 
-function App() {
-  useEffect(() => {
-    ReactGA.initialize('G-6WQ0EQ20DJ');
-    ReactGA.send({ hitType: 'pageview', page: window.location.pathname });
-
-    const link = document.createElement('link');
-    link.href =
-      'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap';
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
-  }, []);
-
+function HomePage() {
   return (
     <>
-      {/* ═══════ NAVIGATION ═══════ */}
-      <nav className="nav" id="main-nav">
-        <div className="nav__logo">
-          <span className="nav__logo-dot" />
-          VIVABOT
-        </div>
-
-        <ul className="nav__links">
-          <li className="nav__link" id="nav-home">Home</li>
-          <li className="nav__link" id="nav-testimonials">Testimonials</li>
-          <li className="nav__link" id="nav-contact">Contact</li>
-        </ul>
-
-        <div className="nav__cta" id="nav-cta-talk">
-          <span>// Let's Talk</span>
-          <span className="nav__cta-icon">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="7" y1="17" x2="17" y2="7" />
-              <polyline points="7 7 17 7 17 17" />
-            </svg>
-          </span>
-        </div>
-
-        <button className="nav__mobile-toggle" id="nav-mobile-toggle" aria-label="Menu">
-          <span /><span /><span />
-        </button>
-      </nav>
-
       {/* ═══════ HERO SECTION ═══════ */}
       <section className="hero" id="hero">
         <div className="hero__noise" />
@@ -114,6 +77,68 @@ function App() {
 
       {/* ═══════ VOICE ASSISTANT ORB ═══════ */}
       <VoiceAssistant persona="jenie" position="right" name="Jenie" />
+    </>
+  );
+}
+
+function App() {
+  const location = useLocation();
+  const isLinguaLive = location.pathname === '/lingualive';
+
+  useEffect(() => {
+    ReactGA.initialize('G-6WQ0EQ20DJ');
+    ReactGA.send({ hitType: 'pageview', page: window.location.pathname });
+
+    const link = document.createElement('link');
+    link.href =
+      'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+  }, []);
+
+  return (
+    <>
+      {/* ═══════ NAVIGATION — only show on non-LinguaLive pages ═══════ */}
+      {!isLinguaLive && (
+        <nav className="nav" id="main-nav">
+          <div className="nav__logo">
+            <span className="nav__logo-dot" />
+            VIVABOT
+          </div>
+
+          <ul className="nav__links">
+            <li className="nav__link" id="nav-home">Home</li>
+            <li className="nav__link" id="nav-testimonials">Testimonials</li>
+            <Link to="/lingualive" style={{ textDecoration: 'none' }}>
+              <li className="nav__link nav__link--lingua" id="nav-lingualive">
+                <span className="nav__link-lingua-dot" />
+                LinguaLive
+              </li>
+            </Link>
+            <li className="nav__link" id="nav-contact">Contact</li>
+          </ul>
+
+          <div className="nav__cta" id="nav-cta-talk">
+            <span>// Let's Talk</span>
+            <span className="nav__cta-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="7" y1="17" x2="17" y2="7" />
+                <polyline points="7 7 17 7 17 17" />
+              </svg>
+            </span>
+          </div>
+
+          <button className="nav__mobile-toggle" id="nav-mobile-toggle" aria-label="Menu">
+            <span /><span /><span />
+          </button>
+        </nav>
+      )}
+
+      {/* ═══════ ROUTES ═══════ */}
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/lingualive" element={<LinguaLive />} />
+      </Routes>
     </>
   );
 }
