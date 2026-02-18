@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import ReactGA from 'react-ga4';
 import SplineScene from './components/SplineScene';
@@ -14,7 +14,10 @@ function HomePage() {
       <section className="hero" id="hero">
         <div className="hero__noise" />
 
-        {/* 3D Scene — Spline (full viewport) */}
+        {/* Mobile gradient background (visible only on mobile via CSS) */}
+        <div className="hero__mobile-bg" />
+
+        {/* 3D Scene — Spline (hidden on mobile via CSS) */}
         <div className="hero__3d-container" id="hero-3d-container">
           <SplineScene scene={SPLINE_ROBOT_URL} />
         </div>
@@ -24,8 +27,8 @@ function HomePage() {
           <span className="hero__eyebrow">AI-Powered Voice Intelligence</span>
           <h1 className="hero__headline">
             <span className="hero__headline-line">
-              <span className="hero__headline-word hero__headline-word--outline">The</span>
-              <span className="hero__headline-word hero__headline-word--accent">&nbsp;AI</span>
+              <span className="hero__headline-word hero__headline-word--outline">The </span>
+              <span className="hero__headline-word hero__headline-word--accent">AI</span>
             </span>
             <span className="hero__headline-line">Voice Agent</span>
             <span className="hero__headline-line">
@@ -35,6 +38,16 @@ function HomePage() {
           <p className="hero__subtitle">
             Custom voice AI solutions for businesses that want to scale conversations, automate support, and close deals — 24/7.
           </p>
+
+          {/* Mobile CTA button (visible only on mobile via CSS) */}
+          <Link to="/lingualive" className="hero__cta-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+            Try Live AI Translator
+          </Link>
         </div>
       </section>
 
@@ -84,6 +97,18 @@ function HomePage() {
 function App() {
   const location = useLocation();
   const isLinguaLive = location.pathname === '/lingualive';
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  // Lock body scroll when menu is open
+  useEffect(() => {
+    document.body.style.overflow = mobileMenuOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     ReactGA.initialize('G-6WQ0EQ20DJ');
@@ -98,9 +123,9 @@ function App() {
 
   return (
     <>
-      {/* ═══════ NAVIGATION — only show on non-LinguaLive pages ═══════ */}
+      {/* ═══════ NAVIGATION ═══════ */}
       {!isLinguaLive && (
-        <nav className="nav" id="main-nav">
+        <nav className={`nav ${mobileMenuOpen ? 'nav--menu-open' : ''}`} id="main-nav">
           <div className="nav__logo">
             <span className="nav__logo-dot" />
             VIVABOT
@@ -128,10 +153,37 @@ function App() {
             </span>
           </div>
 
-          <button className="nav__mobile-toggle" id="nav-mobile-toggle" aria-label="Menu">
+          <button
+            className={`nav__mobile-toggle ${mobileMenuOpen ? 'nav__mobile-toggle--open' : ''}`}
+            id="nav-mobile-toggle"
+            aria-label="Menu"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          >
             <span /><span /><span />
           </button>
         </nav>
+      )}
+
+      {/* ═══════ MOBILE MENU OVERLAY ═══════ */}
+      {mobileMenuOpen && (
+        <div className="mobile-menu" onClick={() => setMobileMenuOpen(false)}>
+          <div className="mobile-menu__panel" onClick={e => e.stopPropagation()}>
+            <ul className="mobile-menu__links">
+              <li className="mobile-menu__link" style={{ animationDelay: '0.05s' }} onClick={() => setMobileMenuOpen(false)}>Home</li>
+              <li className="mobile-menu__link" style={{ animationDelay: '0.1s' }} onClick={() => setMobileMenuOpen(false)}>Testimonials</li>
+              <Link to="/lingualive" style={{ textDecoration: 'none' }} onClick={() => setMobileMenuOpen(false)}>
+                <li className="mobile-menu__link mobile-menu__link--lingua" style={{ animationDelay: '0.15s' }}>
+                  <span className="nav__link-lingua-dot" />
+                  LinguaLive
+                </li>
+              </Link>
+              <li className="mobile-menu__link" style={{ animationDelay: '0.2s' }} onClick={() => setMobileMenuOpen(false)}>Contact</li>
+            </ul>
+            <div className="mobile-menu__footer">
+              <p className="mobile-menu__tagline">AI-Powered Voice Intelligence</p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ═══════ ROUTES ═══════ */}

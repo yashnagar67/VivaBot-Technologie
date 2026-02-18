@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mic, MicOff, ArrowLeft, Search, ChevronDown, Languages, X, Globe, Zap, Shield } from 'lucide-react';
+import { Mic, MicOff, ArrowLeft, Search, ChevronDown, X } from 'lucide-react';
 import { useLinguaLive, LANGUAGES } from '../hooks/useLinguaLive';
 import './LinguaLive.css';
 
 const PHASE = { SELECT: 'select', SESSION: 'session' };
 
-// ─── Canvas Visualizer
-function Visualizer({ audioLevel, status, isConnected, isHolding }) {
+// ─── Decorative Orb (Sarvam-style warm gradient with pattern)
+function OrbVisualizer({ audioLevel, status, isHolding, isConnected }) {
     const canvasRef = useRef(null);
     const animRef = useRef(null);
     const tRef = useRef(0);
@@ -16,90 +16,105 @@ function Visualizer({ audioLevel, status, isConnected, isHolding }) {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
-        let w, h;
-
-        const resize = () => {
-            const dpr = window.devicePixelRatio || 1;
-            w = canvas.offsetWidth;
-            h = canvas.offsetHeight;
-            canvas.width = w * dpr;
-            canvas.height = h * dpr;
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        };
-        resize();
-        window.addEventListener('resize', resize);
+        const dpr = window.devicePixelRatio || 1;
+        const size = canvas.offsetWidth;
+        canvas.width = size * dpr;
+        canvas.height = size * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         const draw = () => {
-            tRef.current += 0.012;
+            tRef.current += 0.015;
             const t = tRef.current;
-            const cx = w / 2;
-            const cy = h / 2;
+            const cx = size / 2;
+            const cy = size / 2;
             const level = isConnected ? audioLevel : 0;
+            const baseR = size * 0.35;
 
-            ctx.clearRect(0, 0, w, h);
+            ctx.clearRect(0, 0, size, size);
 
-            // Ambient glow
-            const ambR = Math.min(w, h) * 0.35;
-            const amb = ctx.createRadialGradient(cx, cy, 0, cx, cy, ambR + level * 80);
+            // Outer glow
+            const glowR = baseR + 30 + level * 40;
+            const glow = ctx.createRadialGradient(cx, cy, baseR * 0.5, cx, cy, glowR);
+            glow.addColorStop(0, `rgba(251, 146, 60, ${0.08 + level * 0.12})`);
+            glow.addColorStop(0.6, `rgba(251, 146, 60, ${0.03 + level * 0.04})`);
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Main orb gradient
+            const orbR = baseR + level * 12;
+            const orbG = ctx.createRadialGradient(cx - orbR * 0.2, cy - orbR * 0.3, 0, cx, cy, orbR);
             if (status === 'speaking') {
-                amb.addColorStop(0, `rgba(168, 85, 247, ${0.06 + level * 0.12})`);
-                amb.addColorStop(0.5, `rgba(124, 58, 237, ${0.03 + level * 0.06})`);
-                amb.addColorStop(1, 'transparent');
+                orbG.addColorStop(0, '#fbbf24');
+                orbG.addColorStop(0.4, '#f97316');
+                orbG.addColorStop(1, '#ea580c');
             } else if (isHolding) {
-                amb.addColorStop(0, `rgba(6, 182, 212, ${0.08 + level * 0.15})`);
-                amb.addColorStop(0.5, `rgba(6, 182, 212, ${0.03 + level * 0.06})`);
-                amb.addColorStop(1, 'transparent');
+                orbG.addColorStop(0, '#fdba74');
+                orbG.addColorStop(0.4, '#fb923c');
+                orbG.addColorStop(1, '#f97316');
             } else {
-                amb.addColorStop(0, 'rgba(124, 58, 237, 0.04)');
-                amb.addColorStop(1, 'transparent');
+                orbG.addColorStop(0, '#fed7aa');
+                orbG.addColorStop(0.4, '#fdba74');
+                orbG.addColorStop(1, '#fb923c');
             }
-            ctx.fillStyle = amb;
-            ctx.fillRect(0, 0, w, h);
 
-            // Concentric rings
-            const rings = 3;
-            for (let r = 0; r < rings; r++) {
-                const baseR = ambR * 0.4 + r * 28;
-                const wave = isConnected ? Math.sin(t * 2 + r * 1.2) * level * 12 : Math.sin(t + r) * 2;
-                const radius = baseR + wave;
-                let alpha = 0.06 - r * 0.015;
-                if (isHolding) alpha = 0.12 + level * 0.15 - r * 0.03;
-                if (status === 'speaking') alpha = 0.1 + level * 0.12 - r * 0.025;
+            ctx.beginPath();
+            ctx.arc(cx, cy, orbR, 0, Math.PI * 2);
+            ctx.fillStyle = orbG;
+            ctx.fill();
 
+            // White decorative swirls (Sarvam-style)
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(t * 0.3);
+            ctx.strokeStyle = `rgba(255, 255, 255, ${0.35 + level * 0.3})`;
+            ctx.lineWidth = 1.5;
+            ctx.lineCap = 'round';
+
+            const numSwirls = 6;
+            for (let i = 0; i < numSwirls; i++) {
+                const angle = (i / numSwirls) * Math.PI * 2;
+                ctx.save();
+                ctx.rotate(angle);
                 ctx.beginPath();
-                ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-                ctx.strokeStyle = status === 'speaking'
-                    ? `rgba(168, 85, 247, ${alpha})`
-                    : isHolding
-                        ? `rgba(6, 182, 212, ${alpha})`
-                        : `rgba(148, 163, 184, ${alpha})`;
-                ctx.lineWidth = 1;
+                const swirlR = orbR * 0.3 + Math.sin(t * 2 + i) * 4;
+                for (let j = 0; j <= 30; j++) {
+                    const jt = j / 30;
+                    const r = swirlR * jt;
+                    const a = jt * Math.PI * 1.5 + Math.sin(t + i * 0.5) * 0.3;
+                    const x = Math.cos(a) * r;
+                    const y = Math.sin(a) * r;
+                    if (j === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
                 ctx.stroke();
+                ctx.restore();
             }
 
-            // Frequency arc bars (subtle)
-            if (isConnected && (isHolding || status === 'speaking')) {
-                const numBars = 48;
-                const barBase = ambR * 0.32;
-                for (let i = 0; i < numBars; i++) {
-                    const angle = (i / numBars) * Math.PI * 2 - Math.PI / 2;
-                    const noise = Math.sin(t * 3 + i * 0.4) * 0.4 + Math.cos(t * 2.3 + i * 0.7) * 0.3;
-                    const barH = 3 + level * 35 + noise * (8 + level * 15);
+            // Center dot pattern
+            for (let i = 0; i < 5; i++) {
+                const dotAngle = (i / 5) * Math.PI * 2 + t * 0.5;
+                const dotR = orbR * 0.15;
+                const dx = Math.cos(dotAngle) * dotR;
+                const dy = Math.sin(dotAngle) * dotR;
+                ctx.beginPath();
+                ctx.arc(dx, dy, 2 + level * 2, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${0.5 + level * 0.3})`;
+                ctx.fill();
+            }
 
-                    const x1 = cx + Math.cos(angle) * barBase;
-                    const y1 = cy + Math.sin(angle) * barBase;
-                    const x2 = cx + Math.cos(angle) * (barBase + barH);
-                    const y2 = cy + Math.sin(angle) * (barBase + barH);
+            ctx.restore();
 
-                    ctx.beginPath();
-                    ctx.moveTo(x1, y1);
-                    ctx.lineTo(x2, y2);
-                    ctx.lineWidth = 1.5;
-
-                    const hue = status === 'speaking' ? 270 + (i / numBars) * 50 : 185 + (i / numBars) * 20;
-                    ctx.strokeStyle = `hsla(${hue}, 70%, 60%, ${0.25 + level * 0.5})`;
-                    ctx.stroke();
-                }
+            // Pulsing ring when active
+            if (isHolding || status === 'speaking') {
+                const pulseR = orbR + 8 + Math.sin(t * 3) * 4 + level * 15;
+                ctx.beginPath();
+                ctx.arc(cx, cy, pulseR, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(251, 146, 60, ${0.2 + level * 0.3})`;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
             }
 
             animRef.current = requestAnimationFrame(draw);
@@ -107,12 +122,11 @@ function Visualizer({ audioLevel, status, isConnected, isHolding }) {
         draw();
 
         return () => {
-            window.removeEventListener('resize', resize);
             if (animRef.current) cancelAnimationFrame(animRef.current);
         };
-    }, [audioLevel, status, isConnected, isHolding]);
+    }, [audioLevel, status, isHolding, isConnected]);
 
-    return <canvas ref={canvasRef} className="ll-canvas" />;
+    return <canvas ref={canvasRef} className="ll-orb-canvas" />;
 }
 
 // ─── Main Component
@@ -136,17 +150,12 @@ export default function LinguaLive() {
 
     const selectedLang = LANGUAGES.find(l => l.code === targetLang);
 
-    // Auto-scroll transcript containers
+    // Auto-scroll transcripts
     useEffect(() => {
-        if (userScrollRef.current) {
-            userScrollRef.current.scrollTop = userScrollRef.current.scrollHeight;
-        }
+        if (userScrollRef.current) userScrollRef.current.scrollTop = userScrollRef.current.scrollHeight;
     }, [lastUserText]);
-
     useEffect(() => {
-        if (modelScrollRef.current) {
-            modelScrollRef.current.scrollTop = modelScrollRef.current.scrollHeight;
-        }
+        if (modelScrollRef.current) modelScrollRef.current.scrollTop = modelScrollRef.current.scrollHeight;
     }, [lastModelText]);
 
     const filtered = useMemo(() => {
@@ -167,11 +176,7 @@ export default function LinguaLive() {
 
     const handleStart = () => {
         const seen = localStorage.getItem('lingualive_mic_permission_shown');
-        if (seen) {
-            beginSession();
-        } else {
-            setShowPermission(true);
-        }
+        seen ? beginSession() : setShowPermission(true);
     };
 
     const beginSession = () => {
@@ -203,205 +208,171 @@ export default function LinguaLive() {
 
     useEffect(() => {
         if (!isDropdownOpen) return;
-        const close = (e) => {
-            if (!e.target.closest('.ll-picker')) setIsDropdownOpen(false);
-        };
+        const close = (e) => { if (!e.target.closest('.ll-picker')) setIsDropdownOpen(false); };
         document.addEventListener('click', close);
         return () => document.removeEventListener('click', close);
     }, [isDropdownOpen]);
 
     return (
         <div className="ll-app">
-            {/* ─── SELECT PHASE ─── */}
+            {/* ═══ SELECT PHASE ═══ */}
             {phase === PHASE.SELECT && (
                 <div className="ll-select">
-                    <div className="ll-select__bg" />
+                    {/* Warm gradient bg */}
+                    <div className="ll-select__gradient" />
 
-                    {/* Top Bar */}
-                    <div className="ll-topbar">
-                        <button className="ll-topbar__back" onClick={() => navigate('/')}>
-                            <ArrowLeft size={16} />
-                            <span>Back</span>
+                    {/* Header */}
+                    <header className="ll-header">
+                        <button className="ll-header__back" onClick={() => navigate('/')}>
+                            <ArrowLeft size={18} />
                         </button>
-                        <div className="ll-topbar__badge">
-                            <div className="ll-topbar__badge-dot" />
-                            <span>LIVE TRANSLATION</span>
-                        </div>
-                    </div>
+                        <span className="ll-header__brand">LinguaLive</span>
+                    </header>
 
-                    {/* Content */}
-                    <div className="ll-select__content">
-                        {/* Brand */}
+                    {/* Main content */}
+                    <main className="ll-select__main">
+                        {/* Hero text */}
                         <div className="ll-hero">
-                            <div className="ll-hero__icon-wrap">
-                                <div className="ll-hero__icon">
-                                    <Languages size={24} />
-                                </div>
-                                <div className="ll-hero__icon-ring" />
-                            </div>
+                            <span className="ll-hero__badge">Real-time Voice Translation</span>
                             <h1 className="ll-hero__title">
-                                Lingua<span className="ll-hero__accent">Live</span>
+                                Speak in any language.
+                                <br />Hear it <em>translated</em>.
                             </h1>
-                            <p className="ll-hero__sub">
-                                Real-time voice translation powered by AI.
-                                <br />Speak naturally — hear it translated instantly.
+                            <p className="ll-hero__desc">
+                                Just hold and talk — AI translates your voice instantly into the language you choose.
                             </p>
                         </div>
 
-                        {/* Language Picker */}
-                        <div className="ll-picker">
-                            <label className="ll-picker__label">Translate my voice to</label>
-                            <button
-                                className={`ll-picker__trigger ${isDropdownOpen ? 'll-picker__trigger--open' : ''}`}
-                                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                            >
-                                <span className="ll-picker__flag">{selectedLang?.flag}</span>
-                                <div className="ll-picker__info">
-                                    <span className="ll-picker__name">{selectedLang?.name}</span>
-                                    <span className="ll-picker__native">{selectedLang?.native}</span>
-                                </div>
-                                <ChevronDown size={18} className={`ll-picker__arrow ${isDropdownOpen ? 'll-picker__arrow--up' : ''}`} />
+                        {/* Language Card */}
+                        <div className="ll-card">
+                            <div className="ll-picker">
+                                <label className="ll-picker__label">Language</label>
+                                <button
+                                    className={`ll-picker__trigger ${isDropdownOpen ? 'll-picker__trigger--open' : ''}`}
+                                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                                >
+                                    <span className="ll-picker__flag">{selectedLang?.flag}</span>
+                                    <div className="ll-picker__text">
+                                        <span className="ll-picker__name">{selectedLang?.name}</span>
+                                        <span className="ll-picker__native">{selectedLang?.native}</span>
+                                    </div>
+                                    <ChevronDown size={18} className={`ll-picker__chevron ${isDropdownOpen ? 'll-picker__chevron--up' : ''}`} />
+                                </button>
+
+                                {isDropdownOpen && (
+                                    <div className="ll-dd">
+                                        <div className="ll-dd__search">
+                                            <Search size={14} />
+                                            <input
+                                                type="text"
+                                                placeholder="Search languages..."
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                autoFocus
+                                            />
+                                        </div>
+                                        <div className="ll-dd__list">
+                                            {filtered.map(lang => (
+                                                <button
+                                                    key={lang.code}
+                                                    className={`ll-dd__item ${lang.code === targetLang ? 'll-dd__item--active' : ''}`}
+                                                    onClick={() => { setTargetLang(lang.code); setIsDropdownOpen(false); setSearchQuery(''); }}
+                                                >
+                                                    <span className="ll-dd__flag">{lang.flag}</span>
+                                                    <span className="ll-dd__name">{lang.name}</span>
+                                                    <span className="ll-dd__native-text">{lang.native}</span>
+                                                    {lang.code === targetLang && <span className="ll-dd__check">✓</span>}
+                                                </button>
+                                            ))}
+                                            {filtered.length === 0 && <div className="ll-dd__empty">No languages found</div>}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <button className="ll-go" onClick={handleStart}>
+                                <Mic size={18} />
+                                <span>Start Speaking</span>
                             </button>
-
-                            {isDropdownOpen && (
-                                <div className="ll-dd">
-                                    <div className="ll-dd__search">
-                                        <Search size={14} />
-                                        <input
-                                            type="text"
-                                            placeholder="Search languages..."
-                                            value={searchQuery}
-                                            onChange={(e) => setSearchQuery(e.target.value)}
-                                            autoFocus
-                                        />
-                                    </div>
-                                    <div className="ll-dd__list">
-                                        {filtered.map(lang => (
-                                            <button
-                                                key={lang.code}
-                                                className={`ll-dd__item ${lang.code === targetLang ? 'll-dd__item--active' : ''}`}
-                                                onClick={() => { setTargetLang(lang.code); setIsDropdownOpen(false); setSearchQuery(''); }}
-                                            >
-                                                <span className="ll-dd__flag">{lang.flag}</span>
-                                                <span className="ll-dd__name">{lang.name}</span>
-                                                <span className="ll-dd__native">{lang.native}</span>
-                                                {lang.code === targetLang && <span className="ll-dd__check">✓</span>}
-                                            </button>
-                                        ))}
-                                        {filtered.length === 0 && (
-                                            <div className="ll-dd__empty">No languages found</div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
                         </div>
-
-                        {/* Start */}
-                        <button className="ll-start" onClick={handleStart}>
-                            <div className="ll-start__shimmer" />
-                            <Mic size={18} />
-                            <span>Start Translating</span>
-                        </button>
-
-                        {/* Features */}
-                        <div className="ll-features">
-                            <div className="ll-feat">
-                                <Zap size={14} />
-                                <span>Low latency</span>
-                            </div>
-                            <div className="ll-feat">
-                                <Globe size={14} />
-                                <span>40+ languages</span>
-                            </div>
-                            <div className="ll-feat">
-                                <Shield size={14} />
-                                <span>Private & secure</span>
-                            </div>
-                        </div>
-                    </div>
+                    </main>
                 </div>
             )}
 
-            {/* ─── SESSION PHASE ─── */}
+            {/* ═══ SESSION PHASE ═══ */}
             {phase === PHASE.SESSION && (
                 <div className="ll-session">
-                    <Visualizer
-                        audioLevel={audioLevel}
-                        status={status}
-                        isConnected={isConnected}
-                        isHolding={isHolding}
-                    />
+                    <div className="ll-session__gradient" />
 
-                    {/* Top */}
-                    <div className="ll-session__top">
+                    {/* Session header */}
+                    <header className="ll-session__top">
                         <button className="ll-session__close" onClick={handleEndSession}>
                             <X size={16} />
+                            <span>End</span>
                         </button>
-                        <div className="ll-session__meta">
-                            <span className="ll-session__lang-tag">
-                                {selectedLang?.flag} {selectedLang?.name}
+                        <div className="ll-session__info">
+                            <span className="ll-session__lang">{selectedLang?.flag} {selectedLang?.name}</span>
+                            <span className="ll-session__timer">
+                                <span className="ll-session__timer-dot" />
+                                {formatDuration(sessionDuration)}
                             </span>
                         </div>
-                        <div className="ll-session__timer">
-                            <div className="ll-session__timer-dot" />
-                            {formatDuration(sessionDuration)}
-                        </div>
-                    </div>
+                    </header>
 
-                    {/* Center */}
-                    <div className="ll-session__center">
-                        <div className={`ll-status-orb ll-status-orb--${status} ${isHolding ? 'll-status-orb--holding' : ''}`}
-                            style={{ '--level': isConnected ? audioLevel : 0 }}
-                        >
-                            <div className="ll-status-orb__pulse" />
-                            <div className="ll-status-orb__core">
-                                {status === 'connecting' && <div className="ll-spinner" />}
+                    {/* Orb + Status */}
+                    <div className="ll-session__orb-area">
+                        <div className="ll-orb-wrap">
+                            <OrbVisualizer
+                                audioLevel={audioLevel}
+                                status={status}
+                                isHolding={isHolding}
+                                isConnected={isConnected}
+                            />
+                            {/* Center icon overlay */}
+                            <div className="ll-orb-icon">
+                                {status === 'connecting' && <div className="ll-orb-spinner" />}
                                 {status === 'speaking' && (
-                                    <div className="ll-bars">
+                                    <div className="ll-orb-bars">
                                         <span /><span /><span /><span /><span />
                                     </div>
                                 )}
                                 {(status === 'listening' || status === 'idle') && (
-                                    isHolding ? <Mic size={30} /> : <MicOff size={30} />
+                                    isHolding ? <Mic size={28} color="#fff" /> : <MicOff size={28} color="rgba(255,255,255,0.6)" />
                                 )}
-                                {status === 'error' && <MicOff size={30} />}
+                                {status === 'error' && <MicOff size={28} color="#fff" />}
                             </div>
                         </div>
-                        <p className="ll-status-text">
+                        <p className="ll-session__status">
                             {status === 'connecting' && 'Connecting...'}
-                            {status === 'listening' && !isHolding && 'Ready — hold to speak'}
+                            {status === 'listening' && !isHolding && 'Ready'}
                             {status === 'listening' && isHolding && 'Listening...'}
                             {status === 'speaking' && 'Translating...'}
-                            {status === 'error' && (error || 'Connection error')}
+                            {status === 'error' && (error || 'Error')}
                             {status === 'idle' && 'Ready'}
                         </p>
                     </div>
 
                     {/* Live Transcript */}
                     {isConnected && (lastUserText || lastModelText) && (
-                        <div className="ll-transcript">
+                        <div className="ll-live-text">
                             {lastUserText && (
-                                <div className="ll-transcript__block ll-transcript__block--user">
-                                    <span className="ll-transcript__label">🎙 You</span>
-                                    <div className="ll-transcript__text" ref={userScrollRef}>
-                                        {lastUserText}
-                                    </div>
+                                <div className="ll-live-text__block ll-live-text__block--you">
+                                    <span className="ll-live-text__label">You said</span>
+                                    <div className="ll-live-text__content" ref={userScrollRef}>{lastUserText}</div>
                                 </div>
                             )}
                             {lastModelText && (
-                                <div className="ll-transcript__block ll-transcript__block--model">
-                                    <span className="ll-transcript__label">🌐 Translation</span>
-                                    <div className="ll-transcript__text" ref={modelScrollRef}>
-                                        {lastModelText}
-                                    </div>
+                                <div className="ll-live-text__block ll-live-text__block--ai">
+                                    <span className="ll-live-text__label">Translation</span>
+                                    <div className="ll-live-text__content" ref={modelScrollRef}>{lastModelText}</div>
                                 </div>
                             )}
                         </div>
                     )}
 
-                    {/* Bottom PTT */}
+                    {/* PTT Button */}
                     {isConnected && (
-                        <div className="ll-ptt-wrap">
+                        <div className="ll-ptt-area">
                             <button
                                 className={`ll-ptt ${isHolding ? 'll-ptt--active' : ''}`}
                                 onMouseDown={handleHoldStart}
@@ -412,41 +383,32 @@ export default function LinguaLive() {
                                 onTouchCancel={handleHoldEnd}
                                 onContextMenu={(e) => e.preventDefault()}
                             >
-                                {isHolding && (
-                                    <div className="ll-ptt__rings">
-                                        <span /><span /><span />
-                                    </div>
-                                )}
-                                <div className="ll-ptt__inner">
-                                    <Mic size={24} />
-                                </div>
+                                <Mic size={22} />
+                                <span>{isHolding ? 'Listening...' : 'Hold to Speak'}</span>
                             </button>
-                            <span className="ll-ptt__hint">
-                                {isHolding ? 'Release to stop' : 'Hold to speak'}
-                            </span>
                         </div>
                     )}
 
                     {!isConnected && status === 'connecting' && (
-                        <div className="ll-ptt-wrap">
-                            <p className="ll-wait">Setting up interpreter...</p>
+                        <div className="ll-ptt-area">
+                            <p className="ll-wait-text">Setting up interpreter...</p>
                         </div>
                     )}
                 </div>
             )}
 
-            {/* ─── Permission Modal ─── */}
+            {/* ═══ Permission Modal ═══ */}
             {showPermission && (
                 <div className="ll-modal-bg" onClick={() => setShowPermission(false)}>
                     <div className="ll-modal" onClick={e => e.stopPropagation()}>
-                        <div className="ll-modal__icon"><Mic size={24} /></div>
+                        <div className="ll-modal__icon"><Mic size={22} /></div>
                         <h3 className="ll-modal__title">Microphone Access</h3>
                         <p className="ll-modal__desc">
-                            We need your microphone to capture speech for real-time translation. Audio is processed live and never stored.
+                            LinguaLive needs your microphone for voice translation. Audio is processed live and never stored.
                         </p>
                         <div className="ll-modal__btns">
-                            <button className="ll-modal__btn ll-modal__btn--ghost" onClick={() => setShowPermission(false)}>Cancel</button>
-                            <button className="ll-modal__btn ll-modal__btn--primary" onClick={handlePermissionAccept}>Allow Access</button>
+                            <button className="ll-modal__btn ll-modal__btn--cancel" onClick={() => setShowPermission(false)}>Cancel</button>
+                            <button className="ll-modal__btn ll-modal__btn--allow" onClick={handlePermissionAccept}>Allow</button>
                         </div>
                     </div>
                 </div>
