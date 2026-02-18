@@ -53,6 +53,15 @@ export const LANGUAGES = [
     { code: 'bg', name: 'Bulgarian', native: 'Български', flag: '🇧🇬' },
 ];
 
+// Popular Gemini native audio voices (3F, 2M)
+export const VOICES = [
+    { id: 'Kore', label: 'Kore', gender: 'F', desc: 'Clear & warm' },
+    { id: 'Zephyr', label: 'Zephyr', gender: 'F', desc: 'Bright & breezy' },
+    { id: 'Aoede', label: 'Aoede', gender: 'F', desc: 'Thoughtful & engaging' },
+    { id: 'Puck', label: 'Puck', gender: 'M', desc: 'Upbeat & playful' },
+    { id: 'Charon', label: 'Charon', gender: 'M', desc: 'Deep & calm' },
+];
+
 function getInterpreterPrompt(targetLang) {
     return `You are a real-time voice translator. You translate everything the user says into ${targetLang}.
 
@@ -94,10 +103,26 @@ export function useLinguaLive() {
     const [audioLevel, setAudioLevel] = useState(0); // 0-1 for visualizer
     const [sessionDuration, setSessionDuration] = useState(0);
     const [isMicMuted, setIsMicMuted] = useState(true); // Push-to-talk: muted by default
+    const [previewingVoice, setPreviewingVoice] = useState(null);
 
-    // Live transcription state
+    // Live transcription — only shows CURRENT turn's text
     const [lastUserText, setLastUserText] = useState('');
     const [lastModelText, setLastModelText] = useState('');
+
+    // Refs for performant chunk accumulation (no re-render per chunk)
+    const userTextRef = useRef('');
+    const modelTextRef = useRef('');
+    const textFlushRef = useRef(null);    // rAF handle for batched state flush
+    const clearTimerRef = useRef(null);   // single timeout for delayed clear
+    const turnActiveRef = useRef(false);  // tracks whether a turn is in progress
+    const silenceCounterRef = useRef(0);  // frames of silence to send after PTT release
+
+    // ── Perf timing refs ──
+    const perfHoldStartRef = useRef(0);
+    const perfReleaseRef = useRef(0);
+    const perfFirstAudioRef = useRef(false);
+    const perfFirstInputTxRef = useRef(false);
+    const perfFirstOutputTxRef = useRef(false);
 
     const sessionRef = useRef(null);
     const mediaStreamRef = useRef(null);
@@ -114,6 +139,19 @@ export function useLinguaLive() {
     const analyserRef = useRef(null);
     const animFrameRef = useRef(null);
     const isMicMutedRef = useRef(true); // Ref mirror for audio processor closure
+
+    // Batched state flush — coalesces rapid chunks into a single render
+    const flushText = useCallback(() => {
+        textFlushRef.current = null;
+        setLastUserText(userTextRef.current);
+        setLastModelText(modelTextRef.current);
+    }, []);
+
+    const scheduleFlush = useCallback(() => {
+        if (!textFlushRef.current) {
+            textFlushRef.current = requestAnimationFrame(flushText);
+        }
+    }, [flushText]);
 
     const fetchApiKey = async () => {
         try {
@@ -186,8 +224,11 @@ export function useLinguaLive() {
     }, []);
 
     const handleMessage = useCallback((message) => {
+        const now = performance.now();
+
         // Handle interruption
         if (message.serverContent?.interrupted) {
+            console.log('[LL-PERF] ⚡ Interrupted by user');
             activeSourcesRef.current.forEach(s => { try { s.stop(); } catch (e) { } });
             activeSourcesRef.current = [];
             audioQueueRef.current = [];
@@ -202,6 +243,11 @@ export function useLinguaLive() {
         if (message.serverContent?.modelTurn?.parts) {
             for (const part of message.serverContent.modelTurn.parts) {
                 if (part.inlineData?.data) {
+                    if (!perfFirstAudioRef.current && perfReleaseRef.current) {
+                        perfFirstAudioRef.current = true;
+                        const delta = now - perfReleaseRef.current;
+                        console.log(`[LL-PERF] 🔊 First model AUDIO received: ${delta.toFixed(0)}ms after release`);
+                    }
                     const audioData = base64ToAudioBuffer(part.inlineData.data);
                     audioQueueRef.current.push(audioData);
                 }
@@ -212,37 +258,75 @@ export function useLinguaLive() {
             }
         }
 
-        // Live input transcription (what the user said)
+        // ── Live transcription (current turn only) ──
+
+        // Input transcription — new chunk from user speech
         if (message.serverContent?.inputTranscription?.text) {
-            const chunk = message.serverContent.inputTranscription.text;
-            setLastUserText(prev => prev + chunk);
+            if (!perfFirstInputTxRef.current && perfReleaseRef.current) {
+                perfFirstInputTxRef.current = true;
+                const delta = now - perfReleaseRef.current;
+                console.log(`[LL-PERF] 📝 First INPUT transcription: ${delta.toFixed(0)}ms after release — "${message.serverContent.inputTranscription.text.slice(0, 50)}"`);
+            }
+            // If a new turn is starting, wipe previous text instantly
+            if (!turnActiveRef.current) {
+                turnActiveRef.current = true;
+                if (clearTimerRef.current) {
+                    clearTimeout(clearTimerRef.current);
+                    clearTimerRef.current = null;
+                }
+                userTextRef.current = '';
+                modelTextRef.current = '';
+            }
+            userTextRef.current += message.serverContent.inputTranscription.text;
+            scheduleFlush();
         }
 
-        // Live output transcription (AI translation text)
+        // Output transcription — AI translation text
         if (message.serverContent?.outputTranscription?.text) {
-            const chunk = message.serverContent.outputTranscription.text;
-            setLastModelText(prev => prev + chunk);
+            if (!perfFirstOutputTxRef.current && perfReleaseRef.current) {
+                perfFirstOutputTxRef.current = true;
+                const delta = now - perfReleaseRef.current;
+                console.log(`[LL-PERF] 🌐 First OUTPUT transcription: ${delta.toFixed(0)}ms after release — "${message.serverContent.outputTranscription.text.slice(0, 50)}"`);
+            }
+            modelTextRef.current += message.serverContent.outputTranscription.text;
+            scheduleFlush();
         }
 
+        // Turn complete — keep text visible briefly, then clear for next turn
         if (message.serverContent?.turnComplete) {
-            // Reset transcripts for next turn
-            setTimeout(() => {
+            if (perfReleaseRef.current) {
+                const totalDelta = now - perfReleaseRef.current;
+                const holdDelta = perfReleaseRef.current - perfHoldStartRef.current;
+                console.log(`[LL-PERF] ✅ Turn COMPLETE: ${totalDelta.toFixed(0)}ms after release (held for ${holdDelta.toFixed(0)}ms)`);
+                console.log('[LL-PERF] ──────────────────────────────');
+            }
+            turnActiveRef.current = false;
+            if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+            clearTimerRef.current = setTimeout(() => {
+                clearTimerRef.current = null;
+                userTextRef.current = '';
+                modelTextRef.current = '';
                 setLastUserText('');
                 setLastModelText('');
-            }, 3000);
+            }, 4000);
         }
-    }, [playbackLoop]);
+    }, [playbackLoop, scheduleFlush]);
 
     /**
      * Start a translation session
      */
-    const start = useCallback(async (targetLang) => {
+    const start = useCallback(async (targetLang, voiceName = 'Kore') => {
         try {
             setStatus('connecting');
             setError(null);
             setSessionDuration(0);
             setLastUserText('');
             setLastModelText('');
+            userTextRef.current = '';
+            modelTextRef.current = '';
+            turnActiveRef.current = false;
+            if (clearTimerRef.current) { clearTimeout(clearTimerRef.current); clearTimerRef.current = null; }
+            if (textFlushRef.current) { cancelAnimationFrame(textFlushRef.current); textFlushRef.current = null; }
 
             const apiKey = await fetchApiKey();
 
@@ -272,7 +356,7 @@ export function useLinguaLive() {
                     speechConfig: {
                         voiceConfig: {
                             prebuiltVoiceConfig: {
-                                voiceName: 'Kore'
+                                voiceName: voiceName
                             }
                         }
                     },
@@ -337,8 +421,21 @@ export function useLinguaLive() {
             processor.onaudioprocess = (e) => {
                 if (!sessionRef.current) return;
 
-                // Push-to-talk: skip sending audio when muted
+                const bufLen = e.inputBuffer.getChannelData(0).length;
+
+                // Push-to-talk: when muted, send trailing silence to trigger VAD
                 if (isMicMutedRef.current) {
+                    if (silenceCounterRef.current > 0) {
+                        silenceCounterRef.current--;
+                        try {
+                            // Send a silent PCM frame so Gemini's VAD detects end-of-speech
+                            const silentPcm = new Int16Array(bufLen); // all zeros = silence
+                            const base64Audio = audioBufferToBase64(silentPcm.buffer);
+                            sessionRef.current.sendRealtimeInput({
+                                audio: { data: base64Audio, mimeType: 'audio/pcm;rate=16000' }
+                            });
+                        } catch (err) { /* ignore */ }
+                    }
                     setAudioLevel(0);
                     return;
                 }
@@ -442,6 +539,13 @@ export function useLinguaLive() {
         isPlayingRef.current = false;
         nextPlayTimeRef.current = 0;
         setAudioLevel(0);
+
+        // Clean up transcript timers
+        if (clearTimerRef.current) { clearTimeout(clearTimerRef.current); clearTimerRef.current = null; }
+        if (textFlushRef.current) { cancelAnimationFrame(textFlushRef.current); textFlushRef.current = null; }
+        userTextRef.current = '';
+        modelTextRef.current = '';
+        turnActiveRef.current = false;
     }, []);
 
     useEffect(() => {
@@ -450,9 +554,63 @@ export function useLinguaLive() {
 
     // Sync ref with state for the audio processor closure
     const setMicMuted = useCallback((muted) => {
+        const wasMuted = isMicMutedRef.current;
         setIsMicMuted(muted);
         isMicMutedRef.current = muted;
+
+        if (wasMuted && !muted) {
+            // PTT pressed (muted → unmuted)
+            perfHoldStartRef.current = performance.now();
+            perfFirstAudioRef.current = false;
+            perfFirstInputTxRef.current = false;
+            perfFirstOutputTxRef.current = false;
+            console.log('[LL-PERF] 🎤 PTT PRESSED — recording started');
+        }
+
+        // PTT released (unmuted → muted): queue silence frames to trigger VAD
+        // 3 frames × 4096 samples at 16kHz ≈ 768ms of silence
+        if (!wasMuted && muted) {
+            perfReleaseRef.current = performance.now();
+            const holdDuration = perfReleaseRef.current - perfHoldStartRef.current;
+            console.log(`[LL-PERF] ✋ PTT RELEASED — held for ${holdDuration.toFixed(0)}ms, sending 3 silence frames`);
+            silenceCounterRef.current = 3;
+        }
     }, []);
+
+    // ── Voice preview (static audio files) ──
+    const previewAudioRef = useRef(null);
+
+    const previewVoice = useCallback((voiceId) => {
+        if (previewingVoice) {
+            // Stop current preview
+            if (previewAudioRef.current) {
+                previewAudioRef.current.pause();
+                previewAudioRef.current = null;
+            }
+            setPreviewingVoice(null);
+            return;
+        }
+
+        setPreviewingVoice(voiceId);
+        const audio = new Audio(`/voices/${voiceId.toLowerCase()}.wav`);
+        previewAudioRef.current = audio;
+
+        audio.onended = () => {
+            setPreviewingVoice(null);
+            previewAudioRef.current = null;
+        };
+
+        audio.onerror = () => {
+            console.warn(`Voice preview not found: /voices/${voiceId.toLowerCase()}.wav`);
+            setPreviewingVoice(null);
+            previewAudioRef.current = null;
+        };
+
+        audio.play().catch(() => {
+            setPreviewingVoice(null);
+            previewAudioRef.current = null;
+        });
+    }, [previewingVoice]);
 
     return {
         status,
@@ -463,8 +621,10 @@ export function useLinguaLive() {
         isMicMuted,
         lastUserText,
         lastModelText,
+        previewingVoice,
         start,
         stop,
-        setMicMuted
+        setMicMuted,
+        previewVoice
     };
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mic, MicOff, ArrowLeft, Search, ChevronDown, X } from 'lucide-react';
-import { useLinguaLive, LANGUAGES } from '../hooks/useLinguaLive';
+import { Mic, MicOff, ArrowLeft, Search, ChevronDown, X, Volume2 } from 'lucide-react';
+import { useLinguaLive, LANGUAGES, VOICES } from '../hooks/useLinguaLive';
 import './LinguaLive.css';
 
 const PHASE = { SELECT: 'select', SESSION: 'session' };
@@ -135,7 +135,8 @@ export default function LinguaLive() {
     const {
         status, error, isConnected, audioLevel,
         sessionDuration, isMicMuted, lastUserText, lastModelText,
-        start, stop, setMicMuted
+        previewingVoice,
+        start, stop, setMicMuted, previewVoice
     } = useLinguaLive();
 
     const [phase, setPhase] = useState(PHASE.SELECT);
@@ -144,6 +145,7 @@ export default function LinguaLive() {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [showPermission, setShowPermission] = useState(false);
     const [isHolding, setIsHolding] = useState(false);
+    const [selectedVoice, setSelectedVoice] = useState('Kore');
 
     const userScrollRef = useRef(null);
     const modelScrollRef = useRef(null);
@@ -181,7 +183,7 @@ export default function LinguaLive() {
 
     const beginSession = () => {
         setPhase(PHASE.SESSION);
-        start(targetLang);
+        start(targetLang, selectedVoice);
     };
 
     const handlePermissionAccept = () => {
@@ -288,6 +290,35 @@ export default function LinguaLive() {
                                         </div>
                                     </div>
                                 )}
+                            </div>
+
+                            {/* Voice Picker */}
+                            <div className="ll-voice-picker">
+                                <label className="ll-picker__label">Voice</label>
+                                <div className="ll-voice-chips">
+                                    {VOICES.map(v => (
+                                        <button
+                                            key={v.id}
+                                            className={`ll-voice-chip ${v.id === selectedVoice ? 'll-voice-chip--active' : ''}`}
+                                            onClick={() => setSelectedVoice(v.id)}
+                                        >
+                                            <span className="ll-voice-chip__gender">{v.gender === 'F' ? '♀' : '♂'}</span>
+                                            <span className="ll-voice-chip__name">{v.label}</span>
+                                            <span className="ll-voice-chip__desc">{v.desc}</span>
+                                            <span
+                                                className={`ll-voice-chip__play ${previewingVoice === v.id ? 'll-voice-chip__play--loading' : ''}`}
+                                                onClick={(e) => { e.stopPropagation(); previewVoice(v.id); }}
+                                                title="Preview voice"
+                                            >
+                                                {previewingVoice === v.id ? (
+                                                    <span className="ll-voice-chip__spinner" />
+                                                ) : (
+                                                    <Volume2 size={12} />
+                                                )}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
 
                             <button className="ll-go" onClick={handleStart}>
