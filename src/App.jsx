@@ -4,6 +4,7 @@ import ReactGA from 'react-ga4';
 import SplineScene from './components/SplineScene';
 import VoiceAssistant from './components/VoiceAssistant';
 import LinguaLive from './components/LinguaLive';
+import AboutUs from './components/AboutUs';
 
 const SPLINE_ROBOT_URL = 'https://prod.spline.design/9AxqfcHKT-BLG1bC/scene.splinecode';
 
@@ -132,7 +133,12 @@ function App() {
           </div>
 
           <ul className="nav__links">
-            <li className="nav__link" id="nav-home">Home</li>
+            <Link to="/" style={{ textDecoration: 'none' }}>
+              <li className="nav__link" id="nav-home">Home</li>
+            </Link>
+            <Link to="/about" style={{ textDecoration: 'none' }}>
+              <li className="nav__link" id="nav-about">About</li>
+            </Link>
             <li className="nav__link" id="nav-testimonials">Testimonials</li>
             <Link to="/lingualive" style={{ textDecoration: 'none' }}>
               <li className="nav__link nav__link--lingua" id="nav-lingualive">
@@ -169,15 +175,20 @@ function App() {
         <div className="mobile-menu" onClick={() => setMobileMenuOpen(false)}>
           <div className="mobile-menu__panel" onClick={e => e.stopPropagation()}>
             <ul className="mobile-menu__links">
-              <li className="mobile-menu__link" style={{ animationDelay: '0.05s' }} onClick={() => setMobileMenuOpen(false)}>Home</li>
-              <li className="mobile-menu__link" style={{ animationDelay: '0.1s' }} onClick={() => setMobileMenuOpen(false)}>Testimonials</li>
+              <Link to="/" style={{ textDecoration: 'none' }} onClick={() => setMobileMenuOpen(false)}>
+                <li className="mobile-menu__link" style={{ animationDelay: '0.05s' }}>Home</li>
+              </Link>
+              <Link to="/about" style={{ textDecoration: 'none' }} onClick={() => setMobileMenuOpen(false)}>
+                <li className="mobile-menu__link" style={{ animationDelay: '0.1s' }}>About</li>
+              </Link>
+              <li className="mobile-menu__link" style={{ animationDelay: '0.15s' }} onClick={() => setMobileMenuOpen(false)}>Testimonials</li>
               <Link to="/lingualive" style={{ textDecoration: 'none' }} onClick={() => setMobileMenuOpen(false)}>
-                <li className="mobile-menu__link mobile-menu__link--lingua" style={{ animationDelay: '0.15s' }}>
+                <li className="mobile-menu__link mobile-menu__link--lingua" style={{ animationDelay: '0.2s' }}>
                   <span className="nav__link-lingua-dot" />
                   LinguaLive
                 </li>
               </Link>
-              <li className="mobile-menu__link" style={{ animationDelay: '0.2s' }} onClick={() => setMobileMenuOpen(false)}>Contact</li>
+              <li className="mobile-menu__link" style={{ animationDelay: '0.25s' }} onClick={() => setMobileMenuOpen(false)}>Contact</li>
             </ul>
             <div className="mobile-menu__footer">
               <p className="mobile-menu__tagline">AI-Powered Voice Intelligence</p>
@@ -189,6 +200,7 @@ function App() {
       {/* ═══════ ROUTES ═══════ */}
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/about" element={<AboutUs />} />
         <Route path="/lingualive" element={<LinguaLive />} />
       </Routes>
     </>
