@@ -562,23 +562,38 @@
     border-radius: 8px;
 }
 
-.ll-session__timer-dot {
-    width: 5px;
-    height: 5px;
+.ll-session__signal {
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    background: #ef4444;
-    animation: ll-dot-blink 1.5s ease-in-out infinite;
+    flex-shrink: 0;
 }
 
-@keyframes ll-dot-blink {
+.ll-session__signal--good {
+    background: #22c55e;
+    box-shadow: 0 0 4px rgba(34, 197, 94, 0.4);
+}
+
+.ll-session__signal--reconnecting {
+    background: #f59e0b;
+    animation: ll-signal-pulse 0.8s ease-in-out infinite;
+}
+
+.ll-session__signal--offline {
+    background: #ef4444;
+}
+
+@keyframes ll-signal-pulse {
 
     0%,
     100% {
         opacity: 1;
+        transform: scale(1);
     }
 
     50% {
-        opacity: 0.25;
+        opacity: 0.3;
+        transform: scale(0.7);
     }
 }
 

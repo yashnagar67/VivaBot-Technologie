@@ -104,6 +104,7 @@ export function useLinguaLive() {
     const [sessionDuration, setSessionDuration] = useState(0);
     const [isMicMuted, setIsMicMuted] = useState(true); // Push-to-talk: muted by default
     const [previewingVoice, setPreviewingVoice] = useState(null);
+    const [connectionQuality, setConnectionQuality] = useState('good'); // good, reconnecting, offline
 
     // Live transcription — only shows CURRENT turn's text
     const [lastUserText, setLastUserText] = useState('');
@@ -116,6 +117,20 @@ export function useLinguaLive() {
     const clearTimerRef = useRef(null);   // single timeout for delayed clear
     const turnActiveRef = useRef(false);  // tracks whether a turn is in progress
     const silenceCounterRef = useRef(0);  // frames of silence to send after PTT release
+
+    // ── Noise gate refs ──
+    const noiseFloorRef = useRef(0.008);  // adaptive noise floor (RMS)
+    const noiseCalibCountRef = useRef(0); // count frames for calibration
+    const NOISE_GATE_MULTIPLIER = 1.8;    // speech must be 1.8× louder than noise floor
+    const NOISE_CALIB_FRAMES = 10;        // calibrate from first 10 muted frames
+
+    // ── Auto-reconnect refs ──
+    const reconnectAttemptsRef = useRef(0);
+    const reconnectTimerRef = useRef(null);
+    const MAX_RECONNECTS = 3;
+    const lastTargetLangRef = useRef(null);
+    const lastVoiceNameRef = useRef(null);
+    const intentionalCloseRef = useRef(false);
 
     // ── Perf timing refs ──
     const perfHoldStartRef = useRef(0);
@@ -316,8 +331,15 @@ export function useLinguaLive() {
      * Start a translation session
      */
     const start = useCallback(async (targetLang, voiceName = 'Kore') => {
+        // Store for auto-reconnect
+        lastTargetLangRef.current = targetLang;
+        lastVoiceNameRef.current = voiceName;
+        intentionalCloseRef.current = false;
+        reconnectAttemptsRef.current = 0;
+
         try {
             setStatus('connecting');
+            setConnectionQuality('good');
             setError(null);
             setSessionDuration(0);
             setLastUserText('');
@@ -368,6 +390,11 @@ export function useLinguaLive() {
                     onopen: () => {
                         setIsConnected(true);
                         setStatus('listening');
+                        setConnectionQuality('good');
+                        reconnectAttemptsRef.current = 0;
+                        // Reset noise calibration for new environment
+                        noiseCalibCountRef.current = 0;
+                        noiseFloorRef.current = 0.008;
                         sessionStartRef.current = Date.now();
                         durationIntervalRef.current = setInterval(() => {
                             setSessionDuration(Math.floor((Date.now() - sessionStartRef.current) / 1000));
@@ -375,17 +402,63 @@ export function useLinguaLive() {
                     },
                     onmessage: handleMessage,
                     onerror: (e) => {
-                        setError(`Connection error: ${e.message || 'Unknown'}`);
-                        setStatus('error');
+                        console.warn('[LL] Connection error:', e.message);
+                        // Don't immediately show error — let onclose handle reconnect
                     },
                     onclose: (e) => {
-                        if (e.code !== 1000 && !e.wasClean) {
-                            setError(`Connection closed: ${e.reason || 'Unknown'} (Code: ${e.code})`);
-                            setStatus('error');
-                        } else {
-                            setStatus('idle');
-                        }
                         setIsConnected(false);
+
+                        // Intentional close (user pressed stop) — don't reconnect
+                        if (intentionalCloseRef.current) {
+                            setStatus('idle');
+                            return;
+                        }
+
+                        // Clean close — normal end
+                        if (e.code === 1000 && e.wasClean) {
+                            setStatus('idle');
+                            return;
+                        }
+
+                        // Unexpected close — try auto-reconnect
+                        if (reconnectAttemptsRef.current < MAX_RECONNECTS) {
+                            const attempt = reconnectAttemptsRef.current + 1;
+                            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000); // 1s, 2s, 4s
+                            console.log(`[LL] Connection lost. Reconnecting in ${delay}ms (attempt ${attempt}/${MAX_RECONNECTS})`);
+                            setConnectionQuality('reconnecting');
+                            setStatus('connecting');
+                            setError(null);
+
+                            // Clean up audio processing but keep mic stream alive
+                            if (mediaRecorderRef.current) {
+                                try {
+                                    mediaRecorderRef.current.processor?.disconnect();
+                                    mediaRecorderRef.current.gainNode?.disconnect();
+                                    mediaRecorderRef.current.audioSource?.disconnect();
+                                } catch (_) { }
+                                mediaRecorderRef.current = null;
+                            }
+                            if (durationIntervalRef.current) {
+                                clearInterval(durationIntervalRef.current);
+                                durationIntervalRef.current = null;
+                            }
+                            if (animFrameRef.current) {
+                                cancelAnimationFrame(animFrameRef.current);
+                                animFrameRef.current = null;
+                            }
+                            sessionRef.current = null;
+
+                            reconnectTimerRef.current = setTimeout(() => {
+                                reconnectAttemptsRef.current = attempt;
+                                // Reconnect reusing existing mic stream
+                                reconnectSession();
+                            }, delay);
+                        } else {
+                            setError('Connection lost. Please try again.');
+                            setStatus('error');
+                            setConnectionQuality('offline');
+                            cleanup();
+                        }
                     }
                 }
             });
@@ -423,13 +496,23 @@ export function useLinguaLive() {
 
                 const bufLen = e.inputBuffer.getChannelData(0).length;
 
-                // Push-to-talk: when muted, send trailing silence to trigger VAD
+                // Push-to-talk: when muted, calibrate noise floor + send trailing silence
                 if (isMicMutedRef.current) {
+                    // Calibrate noise floor from ambient sound while muted
+                    if (noiseCalibCountRef.current < NOISE_CALIB_FRAMES) {
+                        const raw = e.inputBuffer.getChannelData(0);
+                        let sum = 0;
+                        for (let i = 0; i < raw.length; i++) sum += raw[i] * raw[i];
+                        const rms = Math.sqrt(sum / raw.length);
+                        // Running average of ambient noise
+                        noiseFloorRef.current = noiseFloorRef.current * 0.7 + rms * 0.3;
+                        noiseCalibCountRef.current++;
+                    }
+
                     if (silenceCounterRef.current > 0) {
                         silenceCounterRef.current--;
                         try {
-                            // Send a silent PCM frame so Gemini's VAD detects end-of-speech
-                            const silentPcm = new Int16Array(bufLen); // all zeros = silence
+                            const silentPcm = new Int16Array(bufLen);
                             const base64Audio = audioBufferToBase64(silentPcm.buffer);
                             sessionRef.current.sendRealtimeInput({
                                 audio: { data: base64Audio, mimeType: 'audio/pcm;rate=16000' }
@@ -443,27 +526,35 @@ export function useLinguaLive() {
                 try {
                     const inputData = e.inputBuffer.getChannelData(0);
 
-                    // Interruption detection
-                    if (isPlayingRef.current) {
-                        let sum = 0;
-                        for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
-                        const volume = Math.sqrt(sum / inputData.length);
-                        if (volume > 0.05) {
-                            activeSourcesRef.current.forEach(s => { try { s.stop(); } catch (e) { } });
-                            activeSourcesRef.current = [];
-                            audioQueueRef.current = [];
-                            isPlayingRef.current = false;
-                            nextPlayTimeRef.current = 0;
-                            playbackLoopRunningRef.current = false;
-                            setStatus('listening');
-                        }
+                    // ── Compute RMS volume (reused for gate + interruption + visualizer) ──
+                    let sum = 0;
+                    for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+                    const rms = Math.sqrt(sum / inputData.length);
+
+                    // ── Interruption detection ──
+                    if (isPlayingRef.current && rms > 0.05) {
+                        activeSourcesRef.current.forEach(s => { try { s.stop(); } catch (e) { } });
+                        activeSourcesRef.current = [];
+                        audioQueueRef.current = [];
+                        isPlayingRef.current = false;
+                        nextPlayTimeRef.current = 0;
+                        playbackLoopRunningRef.current = false;
+                        setStatus('listening');
                     }
 
+                    // ── Noise gate: if audio is just ambient noise, send silence instead ──
+                    const gateThreshold = noiseFloorRef.current * NOISE_GATE_MULTIPLIER;
+                    const isSpeech = rms > gateThreshold;
+
                     const pcmData = new Int16Array(inputData.length);
-                    for (let i = 0; i < inputData.length; i++) {
-                        const s = Math.max(-1, Math.min(1, inputData[i]));
-                        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    if (isSpeech) {
+                        // Real speech — convert and send
+                        for (let i = 0; i < inputData.length; i++) {
+                            const s = Math.max(-1, Math.min(1, inputData[i]));
+                            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                        }
                     }
+                    // else: pcmData stays all zeros = silence (noise gated)
 
                     const base64Audio = audioBufferToBase64(pcmData.buffer);
                     sessionRef.current.sendRealtimeInput({
@@ -488,10 +579,178 @@ export function useLinguaLive() {
         }
     }, [handleMessage, playbackLoop]);
 
+    // ── Reconnect reusing existing mic stream ──
+    const reconnectSession = useCallback(async () => {
+        try {
+            const apiKey = await fetchApiKey();
+            const genAI = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: 'v1alpha' } });
+            if (!genAI.live) throw new Error('Live API not available');
+
+            if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+                audioContextRef.current = createAudioContext(16000);
+            }
+            if (!playbackContextRef.current || playbackContextRef.current.state === 'closed') {
+                playbackContextRef.current = createAudioContext(24000);
+            }
+
+            // Reuse existing mic stream if still active, otherwise get a new one
+            if (!mediaStreamRef.current || !mediaStreamRef.current.active) {
+                const stream = await getMicrophoneStream();
+                mediaStreamRef.current = stream;
+            }
+
+            const targetLanguage = LANGUAGES.find(l => l.code === lastTargetLangRef.current)?.name || lastTargetLangRef.current;
+
+            const session = await genAI.live.connect({
+                model: config.gemini.model,
+                config: {
+                    responseModalities: [Modality.AUDIO],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: lastVoiceNameRef.current || 'Kore' }
+                        }
+                    },
+                    systemInstruction: getInterpreterPrompt(targetLanguage),
+                    inputAudioTranscription: {},
+                    outputAudioTranscription: {}
+                },
+                callbacks: {
+                    onopen: () => {
+                        setIsConnected(true);
+                        setStatus('listening');
+                        setConnectionQuality('good');
+                        reconnectAttemptsRef.current = 0;
+                        noiseCalibCountRef.current = 0;
+                        durationIntervalRef.current = setInterval(() => {
+                            setSessionDuration(Math.floor((Date.now() - sessionStartRef.current) / 1000));
+                        }, 1000);
+                        console.log('[LL] Reconnected successfully');
+                    },
+                    onmessage: handleMessage,
+                    onerror: (e) => {
+                        console.warn('[LL] Reconnect error:', e.message);
+                    },
+                    onclose: (e) => {
+                        setIsConnected(false);
+                        if (intentionalCloseRef.current) { setStatus('idle'); return; }
+                        if (e.code === 1000 && e.wasClean) { setStatus('idle'); return; }
+
+                        if (reconnectAttemptsRef.current < MAX_RECONNECTS) {
+                            const attempt = reconnectAttemptsRef.current + 1;
+                            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
+                            console.log(`[LL] Lost again. Retry in ${delay}ms (${attempt}/${MAX_RECONNECTS})`);
+                            setConnectionQuality('reconnecting');
+                            setStatus('connecting');
+                            if (mediaRecorderRef.current) {
+                                try {
+                                    mediaRecorderRef.current.processor?.disconnect();
+                                    mediaRecorderRef.current.gainNode?.disconnect();
+                                    mediaRecorderRef.current.audioSource?.disconnect();
+                                } catch (_) { }
+                                mediaRecorderRef.current = null;
+                            }
+                            if (durationIntervalRef.current) { clearInterval(durationIntervalRef.current); durationIntervalRef.current = null; }
+                            if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null; }
+                            sessionRef.current = null;
+                            reconnectTimerRef.current = setTimeout(() => {
+                                reconnectAttemptsRef.current = attempt;
+                                reconnectSession();
+                            }, delay);
+                        } else {
+                            setError('Connection lost. Please try again.');
+                            setStatus('error');
+                            setConnectionQuality('offline');
+                            cleanup();
+                        }
+                    }
+                }
+            });
+
+            sessionRef.current = session;
+
+            // Re-wire audio processing
+            const audioSource = audioContextRef.current.createMediaStreamSource(mediaStreamRef.current);
+            const analyser = audioContextRef.current.createAnalyser();
+            analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = 0.8;
+            analyserRef.current = analyser;
+            audioSource.connect(analyser);
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            const meterLoop = () => {
+                analyser.getByteFrequencyData(dataArray);
+                let s = 0;
+                for (let i = 0; i < dataArray.length; i++) s += dataArray[i];
+                setAudioLevel(s / dataArray.length / 255);
+                animFrameRef.current = requestAnimationFrame(meterLoop);
+            };
+            meterLoop();
+
+            const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+            const gainNode = audioContextRef.current.createGain();
+            gainNode.gain.value = 0;
+
+            // Reuse the same onaudioprocess logic (via closure over refs)
+            processor.onaudioprocess = (e) => {
+                if (!sessionRef.current) return;
+                const bufLen = e.inputBuffer.getChannelData(0).length;
+                if (isMicMutedRef.current) {
+                    if (silenceCounterRef.current > 0) {
+                        silenceCounterRef.current--;
+                        try {
+                            const silentPcm = new Int16Array(bufLen);
+                            sessionRef.current.sendRealtimeInput({ audio: { data: audioBufferToBase64(silentPcm.buffer), mimeType: 'audio/pcm;rate=16000' } });
+                        } catch (_) { }
+                    }
+                    setAudioLevel(0);
+                    return;
+                }
+                try {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    let sum = 0;
+                    for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+                    const rms = Math.sqrt(sum / inputData.length);
+                    if (isPlayingRef.current && rms > 0.05) {
+                        activeSourcesRef.current.forEach(s => { try { s.stop(); } catch (_) { } });
+                        activeSourcesRef.current = []; audioQueueRef.current = [];
+                        isPlayingRef.current = false; nextPlayTimeRef.current = 0;
+                        playbackLoopRunningRef.current = false; setStatus('listening');
+                    }
+                    const gateThreshold = noiseFloorRef.current * NOISE_GATE_MULTIPLIER;
+                    const pcmData = new Int16Array(inputData.length);
+                    if (rms > gateThreshold) {
+                        for (let i = 0; i < inputData.length; i++) {
+                            const s = Math.max(-1, Math.min(1, inputData[i]));
+                            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                        }
+                    }
+                    sessionRef.current.sendRealtimeInput({ audio: { data: audioBufferToBase64(pcmData.buffer), mimeType: 'audio/pcm;rate=16000' } });
+                } catch (err) { console.error('Audio processing error:', err); }
+            };
+
+            audioSource.connect(processor);
+            processor.connect(gainNode);
+            gainNode.connect(audioContextRef.current.destination);
+            mediaRecorderRef.current = { processor, audioSource, gainNode };
+
+        } catch (err) {
+            console.error('[LL] Reconnect failed:', err);
+            setError('Reconnection failed. Please try again.');
+            setStatus('error');
+            setConnectionQuality('offline');
+        }
+    }, [handleMessage, playbackLoop]);
+
     const stop = useCallback(() => {
+        intentionalCloseRef.current = true;
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
         cleanup();
         setStatus('idle');
         setIsConnected(false);
+        setConnectionQuality('good');
     }, []);
 
     const cleanup = useCallback(() => {
@@ -622,6 +881,7 @@ export function useLinguaLive() {
         lastUserText,
         lastModelText,
         previewingVoice,
+        connectionQuality,
         start,
         stop,
         setMicMuted,

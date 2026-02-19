@@ -135,7 +135,7 @@ export default function LinguaLive() {
     const {
         status, error, isConnected, audioLevel,
         sessionDuration, isMicMuted, lastUserText, lastModelText,
-        previewingVoice,
+        previewingVoice, connectionQuality,
         start, stop, setMicMuted, previewVoice
     } = useLinguaLive();
 
@@ -344,7 +344,8 @@ export default function LinguaLive() {
                         <div className="ll-session__info">
                             <span className="ll-session__lang">{selectedLang?.flag} {selectedLang?.name}</span>
                             <span className="ll-session__timer">
-                                <span className="ll-session__timer-dot" />
+                                <span className={`ll-session__signal ll-session__signal--${connectionQuality}`}
+                                    title={connectionQuality === 'good' ? 'Connected' : connectionQuality === 'reconnecting' ? 'Reconnecting...' : 'Offline'} />
                                 {formatDuration(sessionDuration)}
                             </span>
                         </div>
