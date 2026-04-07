@@ -355,6 +355,11 @@ export function useVoiceAssistant(persona = 'vivabot') {
             console.log('🌐 Connecting to Gemini Live API...');
             console.log('Model:', config.gemini.model);
 
+            // Determine system instruction — support 'custom' persona from demo
+            const systemInstruction = persona === 'custom'
+                ? (window.__vivabot_custom_prompt || PERSONAS.vivabot)
+                : (PERSONAS[persona] || PERSONAS.vivabot);
+
             const session = await genAI.live.connect({
                 model: config.gemini.model,
                 config: {
@@ -367,7 +372,7 @@ export function useVoiceAssistant(persona = 'vivabot') {
                         }
                     },
                     tools: persona === 'jamie' ? [{ googleSearch: {} }] : [],
-                    systemInstruction: PERSONAS[persona] || PERSONAS.vivabot
+                    systemInstruction
                 },
                 callbacks: {
                     onopen: () => {

@@ -5,7 +5,7 @@ export const config = {
 
     // Gemini Live API configuration
     gemini: {
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        model: 'gemini-3.1-flash-live-preview',
         audioConfig: {
             inputSampleRate: 16000,
             outputSampleRate: 24000,
