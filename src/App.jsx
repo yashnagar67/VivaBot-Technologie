@@ -39,7 +39,7 @@ You help patients book appointments, check doctor availability, and answer commo
 Be empathetic, calm, and professional. Prioritize patient concerns.
 Keep responses under 3 sentences.
 Available doctors: Dr. Sharma (General), Dr. Patel (Ortho), Dr. Gupta (Dermatology). Available slots: 10am-1pm, 3pm-6pm.
-For emergencies, always advise calling 108 or visiting the nearest ER immediately.`
+For emergencies, always adv0 ise calling 108 or visiting the nearest ER immediately.`
   },
   {
     id: 'edtech',
